@@ -1,0 +1,25 @@
+excute system and storage diagnostics
+
+# 1. Evaluate system load and CPU wait states
+uptime
+
+# 2. Check disk I/O metrics to identify high await times or utilization
+iostat -xz 1 3
+
+# 3. Identify drive errors and checksum failures at the array level
+zpool status -v prod_pool
+
+# 4. Parse kernel ring buffer for I/O errors on the storage bus
+dmesg -T | grep -iE "loop21|error|buffer io" | tail -n 15
+
+Hot swap the drive and verify resilver
+
+# 1. Create and attach a new replacement drive (sdd)
+dd if=/dev/zero of=sdd.img bs=1M count=2048
+losetup /dev/loop22 sdd.img
+
+# 2. Replace the failed device in the ZFS pool
+zpool replace prod_pool /dev/loop21 /dev/loop22
+
+# 3. Monitor the resilver progress until state returns to ONLINE
+zpool status prod_pool
