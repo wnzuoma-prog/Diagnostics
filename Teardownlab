@@ -1,0 +1,10 @@
+Host cleanup
+
+# 1. Destroy the ZFS pool
+zpool destroy prod_pool
+
+# 2. Detach loop devices
+losetup -d /dev/loop20 /dev/loop21 /dev/loop22
+
+# 3. Delete temporary files
+rm -rf /tmp/google_tech_lab
