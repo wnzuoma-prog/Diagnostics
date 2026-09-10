@@ -1,0 +1,45 @@
+#Create the file at /usr/local/bin/zpool_monitor.sh
+#!/usr/bin/env bash
+# ==============================================================================
+# ZFS Pool Health & Error Monitor
+# Tracks pool degradation, checksum errors, read/write faults, and notifies syslog.
+# ==============================================================================
+
+LOG_TAG="ZFS_HEALTH_MONITOR"
+ALERT_EMAIL="root" # Change to your preferred address/alias
+
+# 1. Fetch non-ONLINE pools or any pool with non-zero error counts (READ/WRITE/CKSUM)
+FAULTY_POOLS=$(zpool status | awk '
+  /^ pool:/ { pool=$2 }
+  /^state:/ { state=$2; if (state != "ONLINE") print pool " [State: " state "]" }
+  /ONLINE|DEGRADED|FAULTED|UNAVAIL/ {
+    # Check if READ, WRITE, or CKSUM columns contain numbers > 0
+    if ($3 ~ /^[1-9]/ || $4 ~ /^[1-9]/ || $5 ~ /^[1-9]/) {
+      print pool " [Drive Fault Detected on " $1 " - R:" $3 " W:" $4 " CKSUM:" $5 "]"
+    }
+  }
+' | sort -u)
+
+# 2. Process Findings
+if [ -n "$FAULTY_POOLS" ]; then
+  MESSAGE="CRITICAL: ZFS pool issues detected! Details:\n${FAULTY_POOLS}"
+  
+  # Log to system syslog (/var/log/syslog or journalctl)
+  logger -t "$LOG_TAG" -p daemon.crit "$MESSAGE"
+  
+  # Output to stdout for cron execution
+  echo -e "========== ATTENTION REQUIRED =========="
+  echo -e "$MESSAGE"
+  echo -e "========================================"
+  echo -e "\nCurrent Pool Status:"
+  zpool status -v
+  
+  # Send local mail if mailx/postfix is configured
+  if command -v mail &> /dev/null; then
+    echo -e "$MESSAGE\n\n$(zpool status -v)" | mail -s "ZFS Alert: Pool Fault Detected" "$ALERT_EMAIL"
+  fi
+
+else
+  # Optional: Log heartbeat for healthy status
+  logger -t "$LOG_TAG" -p daemon.info "OK: All ZFS pools are ONLINE with 0 errors."
+fi
